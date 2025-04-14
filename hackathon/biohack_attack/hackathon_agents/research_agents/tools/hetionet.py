@@ -49,9 +49,7 @@ async def query_hetionet(keyword: str):
              including the type of relationship and connected node details. Returns an error message
              if no matches are found or if the query fails.
     """
-    print('trying to load hetionate')
     df_nodes, df_edges = load_hetionet()
-    print("load hetionet")
 
     try:
         # Find matching nodes
