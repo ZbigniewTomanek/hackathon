@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
+import click
 import dotenv
 
 # Assuming these imports are correct relative to your project structure
