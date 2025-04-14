@@ -1,58 +1,79 @@
-from typing import List
+import asyncio
 
-from pydantic import BaseModel, Field
+from typing import Union
 
-from .hetionet_agent import KnowledgeGraph
+from agents import Agent, Runner
 
+from biohack_attack.model_factory import ModelFactory, ModelType
 
-class Triple(BaseModel):
-    """
-    Represents a semantic triple in a knowledge graph, consisting of subject, predicate, and object.
+from .biorxiv_agent import biorxiv_agent
+from .europmc_agent import europe_pmc_agent
+from .hetionet_agent import hetionet_agent
+from .pubmed_agent import pubmed_agent
+from .semantic_scholar_agent import semantic_scholar_agent
 
-    A triple is the fundamental unit of knowledge representation in RDF (Resource Description Framework)
-    and similar knowledge graph structures, expressing a relationship between two entities.
-    """
+from .models import QueriesOutput, ResearchAgentOutput, KnowledgeGraph, UnstructuredSource, Query, DataSource
 
-    subject: str = Field(
-        description="The entity that is being described or acting (the source node in the graph)"
-    )
-    predicate: str = Field(
-        description="The property or relationship that connects the subject to the object"
-    )
-    object: str = Field(
-        description="The entity, value, or target that the subject relates to (the target node in the graph)"
-    )
+RESEARCH_AGENT_DISPATCHER_PROMPT = """
+You are an expert Graph Expansion System designed to analyze subgraphs and strategically query external data sources to 
+enhance the graph's coverage, depth, and utility. Your purpose is to identify missing connections, nodes, and 
+relationships that would make the graph more complete and valuable. You should return list of queries with relevenat keywords and data sources to query.
+"""
 
-
-class KnowledgeGraph(BaseModel):
-    """
-    Represents a knowledge graph structure composed of semantic triples.
-
-    A knowledge graph is a network of entities, their properties, and the relationships between them.
-    It organizes information in a graph structure where nodes represent entities and edges represent relationships.
-    """
-
-    triples: List[Triple] = Field(
-        default_factory=list,
-        description="Collection of semantic triples that form the knowledge graph structure",
-    )
+research_agent_dispatcher = Agent(
+    name="Research Agent Dispatacher",
+    instructions=RESEARCH_AGENT_DISPATCHER_PROMPT,
+    model=ModelFactory.build_model(ModelType.GEMINI),
+    output_type=QueriesOutput,
+)
 
 
-class UnstructuredSource(BaseModel):
-    """Represents an unstructured source of information with justification."""
+async def perform_queries(queries: QueriesOutput) -> ResearchAgentOutput:
+    output = ResearchAgentOutput()
 
-    content: str = Field(description="The main content from the source")
-    justification: str = Field(description="Reasoning for including this source")
-    source_id: str = Field(description="Identifier of the source system")
+    async def process_query(
+            query: Query,
+    ) -> tuple[bool, Union[KnowledgeGraph, UnstructuredSource]]:
+        try:
+            if query.data_source == DataSource.HETIONET:
+                result: KnowledgeGraph = await Runner.run(hetionet_agent, query.keyword)
+                return True, result
+            elif query.data_source == DataSource.PUBMED:
+                result: UnstructuredSource = await Runner.run(
+                    pubmed_agent, query.keyword
+                )
+                return False, result
+            elif query.data_source == DataSource.BIORXIV:
+                result: UnstructuredSource = await Runner.run(
+                    biorxiv_agent, query.keyword
+                )
+                return False, result
+            elif query.data_source == DataSource.EUROPE_PMC:
+                result: UnstructuredSource = await Runner.run(
+                    europe_pmc_agent, query.keyword
+                )
+                return False, result
+            elif query.data_source == DataSource.SEMANTIC_SCHOLAR:
+                result: UnstructuredSource = await Runner.run(
+                    semantic_scholar_agent, query.keyword
+                )
+                return False, result
+        except Exception as e:
+            print(
+                f"Error processing query {query.keyword} from {query.data_source}: {str(e)}"
+            )
+            return None, None
 
+    # Run all queries concurrently and collect results
+    results = await asyncio.gather(*[process_query(query) for query in queries.queries])
 
-class ResearchAgentOutput(BaseModel):
-    """Output from the ontology agent containing extracted information."""
+    # Process results after all queries are complete
+    for is_graph, result in results:
+        if result is None:  # Skip failed queries
+            continue
+        if is_graph:
+            output.graphs.append(result)
+        else:
+            output.sources.append(result)
 
-    sources: List[UnstructuredSource] = Field(
-        default_factory=list,
-        description="List of additional unstructured information sources.",
-    )
-    graphs: List[KnowledgeGraph] = Field(
-        default_factory=list, description="List of additional Knowledge Graphs."
-    )
+    return output

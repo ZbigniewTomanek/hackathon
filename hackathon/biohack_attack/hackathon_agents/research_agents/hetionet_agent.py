@@ -1,5 +1,5 @@
 from agents import Agent, ModelSettings
-from biohack_attack.hackathon_agents.research_agents import KnowledgeGraph
+from biohack_attack.hackathon_agents.research_agents.models import KnowledgeGraph
 from biohack_attack.hackathon_agents.research_agents.tools.hetionet import (
     query_hetionet,
 )

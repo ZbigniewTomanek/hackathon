@@ -2,22 +2,17 @@ import asyncio
 from typing import Any, List
 
 from agents import Agent, Runner
-from biohack_attack.hackathon_agents.research_agents import ResearchAgentOutput
-from biohack_attack.hackathon_agents.research_agents.research_agent_dispatcher import (
-    DataSource,
+from biohack_attack.hackathon_agents.research_agents.models import (
     QueriesOutput,
-    research_agent_dispatcher,
+    ResearchAgentOutput,
 )
 from biohack_attack.model_factory import ModelFactory, ModelType
 from dotenv import load_dotenv
+from hackathon_agents.research_agents import perform_queries, research_agent_dispatcher
 from pydantic import BaseModel
 
 from ard.hypothesis import Hypothesis, HypothesisGeneratorProtocol
 from ard.subgraph import Subgraph
-from hackathon.biohack_attack.hackathon_agents.research_agents.hetionet_agent import (
-    KnowledgeGraph,
-    hetionet_agent,
-)
 
 
 class HypothesisOutput(BaseModel):
@@ -37,16 +32,10 @@ async def run_agents(subgraph: Subgraph) -> Hypothesis:
     path = subgraph.to_cypher_string(full_graph=True)
     print(path)
 
-    queries: QueriesOutput = await Runner.run(research_agent_dispatcher, path)
-
-    # TODO: Add async.
-    for query in queries:
-        if query.data_source == DataSource.HETIONET:
-            result: KnowledgeGraph = await Runner.run(hetionet_agent, query.keyword)
-        elif query.data_source == DataSource.PUBMED:
-            pass
-
-    results: ResearchAgentOutput = ResearchAgentOutput(sources=[], graphs=[])
+    research_agent_results = await Runner.run(research_agent_dispatcher, path)
+    queries: QueriesOutput = research_agent_results.final_output_as(QueriesOutput)
+    print(queries)
+    results: ResearchAgentOutput = await perform_queries(queries)
 
     # Hypothesis generation Agent
 
